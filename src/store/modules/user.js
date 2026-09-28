@@ -24,37 +24,57 @@ export default {
   },
 
   actions: {
-    login({ commit, dispatch }, username) {
-      const role = username.startsWith('admin_') ? 'admin' : 'player';
-      commit('cookies/RESET_STATE', null, { root: true });
-      commit('SET_USER', { username, role });
-      dispatch('loadGame');
+    login(context, username) {
+      const role = username === 'admin' ? 'admin' : 'player';
+      context.commit('cookies/RESET_STATE', null, { root: true });
+      context.commit('SET_USER', { username: username, role: role });
+      context.dispatch('loadGame');
     },
-    logout({ commit, dispatch }) {
-      dispatch('saveGame');
-      commit('LOGOUT');
+    logout(context) {
+      context.dispatch('saveGame');
+      context.commit('LOGOUT');
     },
 
-    saveGame({ state, rootState, dispatch }) {
-      if (!state.username) return;
+    saveGame(context) {
+      const username = context.state.username;
+      if (!username) return;
 
       const gameData = {
-        cookies: rootState.cookies.cookies,
-        villainIndex: rootState.cookies.villainIndex,
-        villainsKilled: rootState.cookies.villainsKilled,
-        currentHealth: rootState.cookies.currentHealth,
-        upgradesOwned: rootState.cookies.upgrades.map(u => ({ id: u.id, owned: u.owned }))
+        cookies: context.rootState.cookies.cookies,
+        villainIndex: context.rootState.cookies.villainIndex,
+        villainsKilled: context.rootState.cookies.villainsKilled,
+        currentHealth: context.rootState.cookies.currentHealth,
+        upgradesOwned: [],
       };
-      localStorage.setItem(`save-${state.username}`, JSON.stringify(gameData));
 
+      for (const upgrade of context.rootState.cookies.upgrades) {
+        const savedUpgrade = {
+          id: upgrade.id,
+          owned: upgrade.owned,
+        };
+        gameData.upgradesOwned.push(savedUpgrade);
+      }
 
-      if (rootState.cookies.cookies > 0) {
-        dispatch('leaderboard/updateScore', { username: state.username, cookies: rootState.cookies.cookies }, { root: true });
+      const savedGame = JSON.stringify(gameData);
+      localStorage.setItem(`save-${username}`, savedGame);
+
+      const currentCookies = context.rootState.cookies.cookies;
+      if (currentCookies > 0) {
+        const scoreUpdate = {
+          username: username,
+          cookies: currentCookies,
+        };
+        context.dispatch('leaderboard/updateScore', scoreUpdate, { root: true });
       }
     },
-    loadGame({ state, commit }) {
-      const saved = localStorage.getItem(`save-${state.username}`);
-      if (saved) commit('cookies/LOAD_SAVE', JSON.parse(saved), { root: true });
+    loadGame(context) {
+      const username = context.state.username;
+      const savedGame = localStorage.getItem(`save-${username}`);
+
+      if (savedGame) {
+        const gameData = JSON.parse(savedGame);
+        context.commit('cookies/LOAD_SAVE', gameData, { root: true });
+      }
     }
   }
 };

@@ -7,7 +7,7 @@
       <div class="panel login-panel">
         <h1 class="title">HERO CLICKER</h1>
         <p class="tagline">Rejoins la bataille contre les vilains.</p>
-        <input v-model="usernameInput" placeholder="Pseudo (admin_xxx pour être admin)" />
+        <input v-model="usernameInput" placeholder="Pseudo (écrire admin pour être admin)" />
         <button class="btn" @click="handleLogin">Entrer</button>
       </div>
     </div>
@@ -21,6 +21,7 @@
         <div class="score">
           <span class="score-number">{{ Math.floor(cookies) }}</span>
           <span class="score-label">cookies — {{ autoProduction.toFixed(1) }}/s</span>
+          <span class="score-label">Double : {{ Math.floor(doubleCookies) }}</span>
         </div>
         <div class="user-block">
           <span>{{ username }} <em>· {{ role }}</em></span>
@@ -34,7 +35,6 @@
 </template>
 
 <script>
-import { mapState, mapGetters, mapActions } from 'vuex';
 import heroSwingImg from './assets/spiderman.png';
 
 export default {
@@ -43,15 +43,46 @@ export default {
     return { usernameInput: '', heroSwingImg };
   },
   computed: {
-    ...mapState('cookies', ['cookies', 'autoProduction']),
-    ...mapState('user', ['username', 'role', 'isLoggedIn'])
+    cookies() {
+      return this.$store.state.cookies.cookies;
+    },
+    autoProduction() {
+      return this.$store.state.cookies.autoProduction;
+    },
+    doubleCookies() {
+      return this.$store.getters['cookies/doubleCookies'];
+    },
+    username() {
+      return this.$store.state.user.username;
+    },
+    role() {
+      return this.$store.state.user.role;
+    },
+    isLoggedIn() {
+      return this.$store.state.user.isLoggedIn;
+    }
   },
   methods: {
-    ...mapActions('cookies', ['startAutoProduction']),
-    ...mapActions('user', ['login', 'logout', 'saveGame']),
-    ...mapActions('leaderboard', ['loadScores']),
+    startAutoProduction() {
+      this.$store.dispatch('cookies/startAutoProduction');
+    },
+    login(username) {
+      this.$store.dispatch('user/login', username);
+    },
+    logout() {
+      this.$store.dispatch('user/logout');
+    },
+    saveGame() {
+      this.$store.dispatch('user/saveGame');
+    },
+    loadScores() {
+      this.$store.dispatch('leaderboard/loadScores');
+    },
     handleLogin() {
-      if (this.usernameInput.trim()) this.login(this.usernameInput.trim());
+      const username = this.usernameInput.trim();
+      if (username.length > 0) {
+        this.login(username);
+      }
     },
     handleLogout() {
       this.logout();
@@ -61,7 +92,9 @@ export default {
     this.loadScores();
     this.startAutoProduction();
     setInterval(() => {
-      if (this.isLoggedIn) this.saveGame();
+      if (this.isLoggedIn) {
+        this.saveGame();
+      }
     }, 5000);
   }
 };

@@ -18,8 +18,47 @@ const UPGRADE_DEFS = [
   { id: 'ia', name: 'Captain Marvel', baseCost: 20000000, production: 7800, image: '/src/assets/heros8.png' }
 ];
  
+function createUpgrade(definition) {
+  const upgrade = {
+    id: definition.id,
+    name: definition.name,
+    baseCost: definition.baseCost,
+    image: definition.image,
+    cost: definition.baseCost,
+    owned: 0,
+  };
+
+  if (definition.production !== undefined) {
+    upgrade.production = definition.production;
+  }
+  if (definition.multiplier !== undefined) {
+    upgrade.multiplier = definition.multiplier;
+  }
+  if (definition.maxOwned !== undefined) {
+    upgrade.maxOwned = definition.maxOwned;
+  }
+
+  return upgrade;
+}
+
 function createUpgrades() {
-  return UPGRADE_DEFS.map(def => ({ ...def, cost: def.baseCost, owned: 0 }));
+  const upgrades = [];
+
+  for (const definition of UPGRADE_DEFS) {
+    upgrades.push(createUpgrade(definition));
+  }
+
+  return upgrades;
+}
+
+function findUpgrade(upgrades, id) {
+  for (const upgrade of upgrades) {
+    if (upgrade.id === id) {
+      return upgrade;
+    }
+  }
+
+  return null;
 }
  
 function createInitialState() {
@@ -40,76 +79,170 @@ export default {
   state: createInitialState(),
  
   getters: {
-    currentVillain: state => VILLAINS[state.villainIndex],
-    healthPercent: state => {
+    doubleCookies(state) {
+      return state.cookies * 2;
+    },
+    currentVillain(state) {
+      return VILLAINS[state.villainIndex];
+    },
+    healthPercent(state) {
       const villain = VILLAINS[state.villainIndex];
-      const maxHealth = Math.round(villain.baseHealth * (1 + state.villainsKilled * 0.4));
-      return Math.max(0, Math.round((state.currentHealth / maxHealth) * 100));
-    },
-    canAfford: state => id => {
-      const upgrade = state.upgrades.find(u => u.id === id);
-      return upgrade && state.cookies >= upgrade.cost;
-    },
+      const healthMultiplier = 1 + state.villainsKilled * 0.4;
+      const maximumHealth = Math.round(villain.baseHealth * healthMultiplier);
+      const healthRatio = state.currentHealth / maximumHealth;
+      const percentage = Math.round(healthRatio * 100);
 
-    isUnlocked: state => id => {
-      const index = state.upgrades.findIndex(u => u.id === id);
-      if (index <= 0) return true;
-      return state.upgrades[index - 1].owned > 0;
+      return Math.max(0, percentage);
     },
-    activeHeroes: state => state.upgrades.filter(u => u.owned > 0)
+    canAfford(state) {
+      return function (id) {
+        const upgrade = findUpgrade(state.upgrades, id);
+
+        if (upgrade === null) {
+          return false;
+        }
+
+        return state.cookies >= upgrade.cost;
+      };
+    },
+    isUnlocked(state) {
+      return function (id) {
+        let upgradeIndex = -1;
+
+        for (let index = 0; index < state.upgrades.length; index++) {
+          if (state.upgrades[index].id === id) {
+            upgradeIndex = index;
+            break;
+          }
+        }
+
+        if (upgradeIndex <= 0) {
+          return true;
+        }
+
+        const previousUpgrade = state.upgrades[upgradeIndex - 1];
+        return previousUpgrade.owned > 0;
+      };
+    },
+    activeHeroes(state) {
+      const heroes = [];
+
+      for (const upgrade of state.upgrades) {
+        if (upgrade.owned > 0) {
+          heroes.push(upgrade);
+        }
+      }
+
+      return heroes;
+    },
   },
  
   mutations: {
-    HIT_VILLAIN(state, amount) {
-      const dmg = amount * state.clickMultiplier;
-      state.cookies += dmg;
-      state.currentHealth -= dmg;
- 
+    ajouterCookie(state, amount) {
+      const cookiesGained = amount * state.clickMultiplier;
+      state.cookies += cookiesGained;
+      state.currentHealth -= cookiesGained;
+
       if (state.currentHealth <= 0) {
-        state.villainsKilled++;
-        state.villainIndex = (state.villainIndex + 1) % VILLAINS.length;
+        state.villainsKilled += 1;
+        state.villainIndex += 1;
+
+        if (state.villainIndex >= VILLAINS.length) {
+          state.villainIndex = 0;
+        }
+
         const nextVillain = VILLAINS[state.villainIndex];
-        state.currentHealth = Math.round(nextVillain.baseHealth * (1 + state.villainsKilled * 0.4));
+        const healthMultiplier = 1 + state.villainsKilled * 0.4;
+        state.currentHealth = Math.round(nextVillain.baseHealth * healthMultiplier);
       }
     },
     BUY_UPGRADE(state, id) {
-      const upgrade = state.upgrades.find(u => u.id === id);
-      if (!upgrade || state.cookies < upgrade.cost) return;
-      if (upgrade.maxOwned && upgrade.owned >= upgrade.maxOwned) return;
- 
+      const upgrade = findUpgrade(state.upgrades, id);
+
+      if (upgrade === null) {
+        return;
+      }
+      if (state.cookies < upgrade.cost) {
+        return;
+      }
+      if (upgrade.maxOwned && upgrade.owned >= upgrade.maxOwned) {
+        return;
+      }
+
       state.cookies -= upgrade.cost;
-      upgrade.owned++;
-      if (upgrade.production) state.autoProduction += upgrade.production;
-      if (upgrade.multiplier) state.clickMultiplier *= upgrade.multiplier;
- 
+      upgrade.owned += 1;
+
+      if (upgrade.production) {
+        state.autoProduction += upgrade.production;
+      }
+      if (upgrade.multiplier) {
+        state.clickMultiplier *= upgrade.multiplier;
+      }
+
       upgrade.cost = Math.round(upgrade.baseCost * Math.pow(1.15, upgrade.owned));
     },
 
     LOAD_SAVE(state, save) {
       const fresh = createInitialState();
  
-      state.cookies = save.cookies ?? fresh.cookies;
-      state.villainIndex = save.villainIndex ?? fresh.villainIndex;
-      state.villainsKilled = save.villainsKilled ?? fresh.villainsKilled;
-      state.currentHealth = save.currentHealth ?? fresh.currentHealth;
+      state.cookies = fresh.cookies;
+      state.villainIndex = fresh.villainIndex;
+      state.villainsKilled = fresh.villainsKilled;
+      state.currentHealth = fresh.currentHealth;
+
+      if (save.cookies !== null && save.cookies !== undefined) {
+        state.cookies = save.cookies;
+      }
+      if (save.villainIndex !== null && save.villainIndex !== undefined) {
+        state.villainIndex = save.villainIndex;
+      }
+      if (save.villainsKilled !== null && save.villainsKilled !== undefined) {
+        state.villainsKilled = save.villainsKilled;
+      }
+      if (save.currentHealth !== null && save.currentHealth !== undefined) {
+        state.currentHealth = save.currentHealth;
+      }
+
       state.autoProduction = 0;
       state.clickMultiplier = 1;
- 
-      state.upgrades = fresh.upgrades.map(def => {
-        const savedProgress = (save.upgradesOwned || []).find(u => u.id === def.id);
-        const owned = savedProgress ? savedProgress.owned : 0;
-        const upgrade = { ...def, owned };
- 
-        if (owned > 0) {
-          upgrade.cost = Math.round(def.baseCost * Math.pow(1.15, owned));
-          if (def.production) state.autoProduction += def.production * owned;
-          if (def.multiplier) state.clickMultiplier *= Math.pow(def.multiplier, owned);
+
+      const savedUpgrades = save.upgradesOwned || [];
+      const loadedUpgrades = [];
+
+      for (const definition of UPGRADE_DEFS) {
+        const upgrade = createUpgrade(definition);
+        let owned = 0;
+
+        for (const savedUpgrade of savedUpgrades) {
+          if (savedUpgrade.id === definition.id) {
+            owned = savedUpgrade.owned;
+            break;
+          }
         }
-        return upgrade;
-      });
+
+        upgrade.owned = owned;
+
+        if (owned > 0) {
+          upgrade.cost = Math.round(definition.baseCost * Math.pow(1.15, owned));
+
+          if (definition.production) {
+            state.autoProduction += definition.production * owned;
+          }
+          if (definition.multiplier) {
+            state.clickMultiplier *= Math.pow(definition.multiplier, owned);
+          }
+        }
+
+        loadedUpgrades.push(upgrade);
+      }
+
+      state.upgrades = loadedUpgrades;
     },
     RESET_STATE(state) {
       Object.assign(state, createInitialState());
+    },
+    SET_COOKIES(state, cookies) {
+      state.cookies = cookies;
     },
     SET_LAST_RECRUITED(state, hero) {
       state.lastRecruited = hero;
@@ -120,21 +253,54 @@ export default {
   },
  
   actions: {
-    click({ commit }) {
-      commit('HIT_VILLAIN', 1);
+    click(context) {
+      context.commit('ajouterCookie', 1);
+
+      const activeChallenge = context.rootState.leaderboard.activeChallenge;
+      if (activeChallenge !== null) {
+        context.commit(
+          'leaderboard/ADD_CHALLENGE_COOKIES',
+          context.state.clickMultiplier,
+          { root: true },
+        );
+      }
     },
-    buyUpgrade({ commit, getters, state }, id) {
-      if (!getters.canAfford(id)) return;
-      const upgrade = state.upgrades.find(u => u.id === id);
- 
-      commit('BUY_UPGRADE', id);
- 
-      commit('SET_LAST_RECRUITED', { name: upgrade.name, image: upgrade.image });
-      setTimeout(() => commit('CLEAR_LAST_RECRUITED'), 1800);
+    buyUpgrade(context, id) {
+      const canAffordUpgrade = context.getters.canAfford(id);
+      if (!canAffordUpgrade) {
+        return;
+      }
+
+      const upgrade = findUpgrade(context.state.upgrades, id);
+      context.commit('BUY_UPGRADE', id);
+
+      const recruitedHero = {
+        name: upgrade.name,
+        image: upgrade.image,
+      };
+      context.commit('SET_LAST_RECRUITED', recruitedHero);
+
+      setTimeout(function () {
+        context.commit('CLEAR_LAST_RECRUITED');
+      }, 1800);
     },
-    startAutoProduction({ commit, state }) {
-      setInterval(() => {
-        if (state.autoProduction > 0) commit('HIT_VILLAIN', state.autoProduction);
+    startAutoProduction(context) {
+      setInterval(function () {
+        const production = context.state.autoProduction;
+
+        if (production > 0) {
+          context.commit('ajouterCookie', production);
+
+          const activeChallenge = context.rootState.leaderboard.activeChallenge;
+          if (activeChallenge !== null) {
+            const cookiesGained = production * context.state.clickMultiplier;
+            context.commit(
+              'leaderboard/ADD_CHALLENGE_COOKIES',
+              cookiesGained,
+              { root: true },
+            );
+          }
+        }
       }, 1000);
     }
   }
